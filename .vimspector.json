@@ -1,0 +1,17 @@
+{
+	"configurations": {
+		"Run Server": {
+			"adapter": "CodeLLDB",
+			"configuration": {
+				"type": "lldb",
+				"request": "launch",
+				"args": [],
+				"cwd": "${workspaceRoot}",
+				"program": "${workspaceRoot}/target/debug/checkers",
+				"initCommands": [
+					"platform shell cargo build --manifest-path ${workspaceRoot}/Cargo.toml"
+				]
+			}
+		}
+	}
+}
