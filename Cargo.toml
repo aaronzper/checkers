@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossterm = "0.23"
-
+tokio = { version = "1.28.1", features = ["full"] }
+crossterm = { version = "0.23", features = ["event-stream"] }
+futures = "0.3"

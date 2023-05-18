@@ -1,13 +1,16 @@
-use std::io::{Stdout, Write};
+use std::{io::{Stdout, Write}, process::exit};
+use crate::actor::Actor;
+use futures::StreamExt;
 
 use crossterm::{
     Result,
     QueueableCommand,
     style::{Color, SetForegroundColor},
     style::Print,
-    terminal::{EnterAlternateScreen, Clear, SetSize},
+    terminal::{EnterAlternateScreen, Clear, SetSize, enable_raw_mode, disable_raw_mode},
     cursor::MoveTo,
-    style::SetBackgroundColor
+    style::SetBackgroundColor,
+    event::{Event, KeyCode, EventStream}
 };
 
 pub enum BoardState {
@@ -19,62 +22,131 @@ pub enum BoardState {
 pub struct Board {
     pub width: u8,
     pub height: u8,
-    pub terminal: Stdout,
-    pub state: Vec<Vec<BoardState>>
+    pub terminal: Option<Stdout>,
+    pub state: Vec<Vec<BoardState>>,
+    pub actors: (Actor, Actor)
 }
 
 impl Board {
-    pub fn draw(&mut self) -> Result<()> {
-        //self.terminal.queue(EnterAlternateScreen)?;
-        self.terminal.queue(Clear(crossterm::terminal::ClearType::All))?;
-        self.terminal.queue(SetSize(self.width as u16, self.height as u16))?;
+    pub fn new(width: u8, height: u8, terminal: Option<Stdout>, actors: (Actor, Actor)) -> Result<Board> {
+        let mut board = Board {
+            width,
+            height,
+            terminal,
+            state: Vec::default(),
+            actors
+        };
+
+        match board.terminal {
+            None => (),
+            Some(ref mut t) => {
+                t.queue(EnterAlternateScreen)?;
+                enable_raw_mode()?;
+            }
+        };
 
         let mut x: u8 = 0;
-        while x < self.width {
-            self.state.push(Vec::default());
+        while x < board.width {
+            board.state.push(Vec::default());
 
             let mut y: u8 = 0;
-            while y < self.height {
-                self.state[x as usize].push(BoardState::NoPiece);
-                self.terminal.queue(MoveTo(x as u16 * 2, y as u16))?;
-
-                let bg_color: Color;
+            while y < board.height {
+                let piece;
                 if (x % 2) == (y % 2) {
-                    bg_color = Color::Black;
                     if y <= 2 {
-                        self.state[x as usize][y as usize] = BoardState::RedPiece;
+                        piece = BoardState::RedPiece;
                     }
-                    else if y >= 5 {
-                        self.state[x as usize][y as usize] = BoardState::BluePiece;
+                    else if y >= (board.height - 3) {
+                        piece = BoardState::BluePiece;
+                    }
+                    else {
+                        piece = BoardState::NoPiece;
                     }
                 }
                 else {
-                    bg_color = Color::White;
+                    piece = BoardState::NoPiece;
                 }
 
-                self.terminal.queue(SetBackgroundColor(bg_color))?;
-
-                let print_str = match self.state[x as usize][y as usize] {
-                    BoardState::NoPiece => "  ",
-                    BoardState::RedPiece => {
-                        self.terminal.queue(SetForegroundColor(Color::Red))?;
-                        "⦿ "
-                    },
-                    BoardState::BluePiece => {
-                        self.terminal.queue(SetForegroundColor(Color::Blue))?;
-                        "⦿ "
-                    },
-
-                };
-                self.terminal.queue(Print(print_str))?;
+                board.state[x as usize].push(piece);
                 
                 y += 1;
             }
             x += 1;
         }
 
-        self.terminal.flush()?;
+        Ok(board)
+    }
+
+    pub fn draw(&mut self) -> Result<()> {
+        let mut terminal = self.terminal.as_ref().unwrap();
+        terminal.queue(Clear(crossterm::terminal::ClearType::All))?;
+        terminal.queue(SetSize(self.width as u16, self.height as u16))?;
+
+        let mut x: u8 = 0;
+        while x < self.width {
+            let mut y: u8 = 0;
+            while y < self.height {
+                terminal.queue(MoveTo(x as u16 * 2, y as u16))?;
+
+                let bg_color: Color;
+                if (x % 2) == (y % 2) {
+                    bg_color = Color::Black;
+                }
+                else {
+                    bg_color = Color::White;
+                }
+
+                terminal.queue(SetBackgroundColor(bg_color))?;
+
+                let print_str = match self.state[x as usize][y as usize] {
+                    BoardState::NoPiece => "  ",
+                    BoardState::RedPiece => {
+                        terminal.queue(SetForegroundColor(Color::Red))?;
+                        "⦿ "
+                    },
+                    BoardState::BluePiece => {
+                        terminal.queue(SetForegroundColor(Color::Blue))?;
+                        "⦿ "
+                    },
+
+                };
+                terminal.queue(Print(print_str))?;
+                
+                y += 1;
+            }
+            x += 1;
+        }
+
+        terminal.queue(SetBackgroundColor(Color::Reset))?;
+        terminal.queue(SetForegroundColor(Color::Reset))?;
+        terminal.flush()?;
+
+        tokio::task::spawn(quit_listener());
 
         Ok(())
+
     }
+}
+
+async fn quit_listener() {
+    let mut stream = EventStream::new();
+    
+    loop {
+        match stream.next().await {
+            Some(event) => match event {
+                Ok(event) => match event {
+                    Event::Key(key_event) => {
+                        if key_event.code == KeyCode::Char('q') {
+                            disable_raw_mode().unwrap();
+                            exit(0);
+                        }
+                    },
+                    _ => continue
+                },
+                Err(_) => continue
+            },
+            None => continue
+        }
+    }
+
 }

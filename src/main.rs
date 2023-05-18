@@ -1,16 +1,17 @@
 mod board;
+mod actor;
 
 use std::io::stdout;
+use actor::Actor;
 use crossterm::Result;
 
-fn main() -> Result<()> {
-    let mut board = board::Board {
-        width: 8,
-        height: 8,
-        terminal: stdout(),
-        state: Vec::default()
+#[tokio::main]
+async fn main() -> Result<()> {
+    let actor = Actor {
+        actor_type: actor::ActorType::Human
     };
 
+    let mut board = board::Board::new(8, 8, Some(stdout()), (actor, actor)).unwrap();
     board.draw()?;
 
     loop {}
