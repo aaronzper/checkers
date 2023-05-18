@@ -12,9 +12,7 @@ async fn main() -> Result<()> {
     };
 
     let mut board = board::Board::new(8, 8, Some(stdout()), (actor, actor)).unwrap();
-    board.draw()?;
-
-    loop {}
+    board.draw().await?;
 
     Ok(())
 }

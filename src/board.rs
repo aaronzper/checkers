@@ -7,7 +7,7 @@ use crossterm::{
     QueueableCommand,
     style::{Color, SetForegroundColor},
     style::Print,
-    terminal::{EnterAlternateScreen, Clear, SetSize, enable_raw_mode, disable_raw_mode},
+    terminal::{EnterAlternateScreen, Clear, SetSize, enable_raw_mode, disable_raw_mode, is_raw_mode_enabled},
     cursor::MoveTo,
     style::SetBackgroundColor,
     event::{Event, KeyCode, EventStream}
@@ -40,8 +40,13 @@ impl Board {
         match board.terminal {
             None => (),
             Some(ref mut t) => {
+                if is_raw_mode_enabled()? {
+                    panic!("Game already exists using this terminal");
+                }
+
                 t.queue(EnterAlternateScreen)?;
                 enable_raw_mode()?;
+                tokio::task::spawn(event_loop());
             }
         };
 
@@ -77,7 +82,7 @@ impl Board {
         Ok(board)
     }
 
-    pub fn draw(&mut self) -> Result<()> {
+    pub async fn draw(&mut self) -> Result<()> {
         let mut terminal = self.terminal.as_ref().unwrap();
         terminal.queue(Clear(crossterm::terminal::ClearType::All))?;
         terminal.queue(SetSize(self.width as u16, self.height as u16))?;
@@ -121,31 +126,23 @@ impl Board {
         terminal.queue(SetForegroundColor(Color::Reset))?;
         terminal.flush()?;
 
-        tokio::task::spawn(quit_listener());
 
         Ok(())
 
     }
+
+
 }
 
-async fn quit_listener() {
-    let mut stream = EventStream::new();
-    
+async fn event_loop() {
     loop {
-        match stream.next().await {
-            Some(event) => match event {
-                Ok(event) => match event {
-                    Event::Key(key_event) => {
-                        if key_event.code == KeyCode::Char('q') {
-                            disable_raw_mode().unwrap();
-                            exit(0);
-                        }
-                    },
-                    _ => continue
-                },
-                Err(_) => continue
+        match crossterm::event::read().unwrap() {
+            Event::Key(event) => {
+                if event.code == KeyCode::Esc {
+                    exit(0);
+                }
             },
-            None => continue
+            _ => continue
         }
     }
 
