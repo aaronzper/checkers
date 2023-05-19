@@ -1,6 +1,6 @@
-use std::{io::{Stdout, Write}, process::exit};
+use std::{io::{Stdout, Write}, process::exit, sync::Arc};
 use crate::actor::Actor;
-use futures::StreamExt;
+use tokio::sync::Mutex;
 
 use crossterm::{
     Result,
@@ -10,7 +10,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, Clear, SetSize, enable_raw_mode, disable_raw_mode, is_raw_mode_enabled},
     cursor::MoveTo,
     style::SetBackgroundColor,
-    event::{Event, KeyCode, EventStream}
+    event::{Event, KeyCode, MouseEventKind, EnableMouseCapture}, ExecutableCommand
 };
 
 pub enum BoardState {
@@ -24,20 +24,24 @@ pub struct Board {
     pub height: u8,
     pub terminal: Option<Stdout>,
     pub state: Vec<Vec<BoardState>>,
-    pub actors: (Actor, Actor)
+    pub actors: (Actor, Actor),
+    pub highlight: Option<(u16, u16)>
 }
 
 impl Board {
-    pub fn new(width: u8, height: u8, terminal: Option<Stdout>, actors: (Actor, Actor)) -> Result<Board> {
-        let mut board = Board {
+    pub async fn new(width: u8, height: u8, terminal: Option<Stdout>, actors: (Actor, Actor)) -> Result<Arc<Mutex<Board>>> {
+        let board = Arc::new(Mutex::new(Board {
             width,
             height,
             terminal,
             state: Vec::default(),
-            actors
-        };
+            actors,
+            highlight: None
+        }));
 
-        match board.terminal {
+        let mut board_lock = board.lock().await;
+
+        match board_lock.terminal {
             None => (),
             Some(ref mut t) => {
                 if is_raw_mode_enabled()? {
@@ -45,23 +49,24 @@ impl Board {
                 }
 
                 t.queue(EnterAlternateScreen)?;
+                t.queue(EnableMouseCapture)?;
                 enable_raw_mode()?;
-                tokio::task::spawn(event_loop());
+                tokio::task::spawn(event_loop(Arc::clone(&board)));
             }
         };
 
         let mut x: u8 = 0;
-        while x < board.width {
-            board.state.push(Vec::default());
+        while x < board_lock.width {
+            board_lock.state.push(Vec::default());
 
             let mut y: u8 = 0;
-            while y < board.height {
+            while y < board_lock.height {
                 let piece;
                 if (x % 2) == (y % 2) {
                     if y <= 2 {
                         piece = BoardState::RedPiece;
                     }
-                    else if y >= (board.height - 3) {
+                    else if y >= (board_lock.height - 3) {
                         piece = BoardState::BluePiece;
                     }
                     else {
@@ -72,13 +77,14 @@ impl Board {
                     piece = BoardState::NoPiece;
                 }
 
-                board.state[x as usize].push(piece);
+                board_lock.state[x as usize].push(piece);
                 
                 y += 1;
             }
             x += 1;
         }
 
+        drop(board_lock);
         Ok(board)
     }
 
@@ -94,7 +100,10 @@ impl Board {
                 terminal.queue(MoveTo(x as u16 * 2, y as u16))?;
 
                 let bg_color: Color;
-                if (x % 2) == (y % 2) {
+                if self.highlight == Some((x as u16 * 2, y as u16)) {
+                    bg_color = Color::DarkYellow;
+                }
+                else if (x % 2) == (y % 2) {
                     bg_color = Color::Black;
                 }
                 else {
@@ -134,12 +143,19 @@ impl Board {
 
 }
 
-async fn event_loop() {
+async fn event_loop(board: Arc<Mutex<Board>>) {
     loop {
         match crossterm::event::read().unwrap() {
             Event::Key(event) => {
                 if event.code == KeyCode::Esc {
                     exit(0);
+                }
+            },
+            Event::Mouse(event) => {
+                if event.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left) {
+                    let mut board_lock = board.lock().await;
+                    board_lock.highlight = Some((event.column, event.row));
+                    board_lock.draw().await.unwrap();
                 }
             },
             _ => continue

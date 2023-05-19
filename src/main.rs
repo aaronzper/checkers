@@ -11,8 +11,8 @@ async fn main() -> Result<()> {
         actor_type: actor::ActorType::Human
     };
 
-    let mut board = board::Board::new(8, 8, Some(stdout()), (actor, actor)).unwrap();
-    board.draw().await?;
+    let board = board::Board::new(8, 8, Some(stdout()), (actor, actor)).await.unwrap();
+    board.lock().await.draw().await?;
 
     Ok(())
 }
