@@ -8,7 +8,7 @@ use crossterm::{
     style::{Color, SetForegroundColor},
     style::Print,
     terminal::{EnterAlternateScreen, Clear, SetSize, enable_raw_mode, disable_raw_mode, is_raw_mode_enabled},
-    cursor::MoveTo,
+    cursor::{MoveTo, Hide},
     style::SetBackgroundColor,
     event::{Event, KeyCode, MouseEventKind, EnableMouseCapture}, ExecutableCommand
 };
@@ -24,19 +24,17 @@ pub struct Board {
     pub height: u8,
     pub terminal: Option<Stdout>,
     pub state: Vec<Vec<BoardState>>,
-    pub actors: (Actor, Actor),
-    pub highlight: Option<(u16, u16)>
+    pub highlights: Vec<(u8, u8)>
 }
 
 impl Board {
-    pub async fn new(width: u8, height: u8, terminal: Option<Stdout>, actors: (Actor, Actor)) -> Result<Arc<Mutex<Board>>> {
+    pub async fn new(width: u8, height: u8, terminal: Option<Stdout>) -> Result<Arc<Mutex<Board>>> {
         let board = Arc::new(Mutex::new(Board {
             width,
             height,
             terminal,
             state: Vec::default(),
-            actors,
-            highlight: None
+            highlights: Vec::default()
         }));
 
         let mut board_lock = board.lock().await;
@@ -50,6 +48,7 @@ impl Board {
 
                 t.queue(EnterAlternateScreen)?;
                 t.queue(EnableMouseCapture)?;
+                t.queue(Hide)?; // Hide cursor
                 enable_raw_mode()?;
                 tokio::task::spawn(event_loop(Arc::clone(&board)));
             }
@@ -100,7 +99,7 @@ impl Board {
                 terminal.queue(MoveTo(x as u16 * 2, y as u16))?;
 
                 let bg_color: Color;
-                if self.highlight == Some((x as u16 * 2, y as u16)) {
+                if self.highlights.contains(&(x, y)) {
                     bg_color = Color::DarkYellow;
                 }
                 else if (x % 2) == (y % 2) {
@@ -143,18 +142,23 @@ impl Board {
 
 }
 
+fn terminal_cord_to_board(column: u16, row: u16) -> (u8, u8) {
+    ((column / 2) as u8, row as u8)
+}
+
 async fn event_loop(board: Arc<Mutex<Board>>) {
     loop {
         match crossterm::event::read().unwrap() {
             Event::Key(event) => {
                 if event.code == KeyCode::Esc {
+                    // TODO: Show cursor, reset terminal, etc
                     exit(0);
                 }
             },
             Event::Mouse(event) => {
                 if event.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left) {
                     let mut board_lock = board.lock().await;
-                    board_lock.highlight = Some((event.column, event.row));
+                    board_lock.highlights.push(terminal_cord_to_board(event.column, event.row));
                     board_lock.draw().await.unwrap();
                 }
             },
