@@ -1,22 +1,25 @@
-use std::{io::{Stdout, Write}, process::exit, sync::Arc};
-use crate::actor::Actor;
-use tokio::sync::Mutex;
-
+use std::{io::{Stdout, Write}, sync::{Arc, atomic::AtomicBool}, collections::HashMap};
+use tokio::sync::mpsc::{Sender, Receiver, channel, error::TryRecvError};
 use crossterm::{
     Result,
     QueueableCommand,
+    ExecutableCommand,
     style::{Color, SetForegroundColor},
     style::Print,
-    terminal::{EnterAlternateScreen, Clear, SetSize, enable_raw_mode, disable_raw_mode, is_raw_mode_enabled},
-    cursor::{MoveTo, Hide},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, Clear, SetSize, enable_raw_mode, disable_raw_mode, is_raw_mode_enabled},
+    cursor::{MoveTo, Hide, Show},
     style::SetBackgroundColor,
-    event::{Event, KeyCode, MouseEventKind, EnableMouseCapture}, ExecutableCommand
+    event::{Event, KeyCode, MouseEventKind, EnableMouseCapture, DisableMouseCapture}, ErrorKind
 };
 
-pub enum BoardState {
-    NoPiece,
-    RedPiece,
-    BluePiece
+pub enum Side {
+    Red,
+    Blue
+}
+
+pub struct BoardState {
+    piece: Option<Side>,
+    highlighted: bool
 }
 
 pub struct Board {
@@ -24,66 +27,76 @@ pub struct Board {
     pub height: u8,
     pub terminal: Option<Stdout>,
     pub state: Vec<Vec<BoardState>>,
-    pub highlights: Vec<(u8, u8)>
+    exit_requested: Arc<AtomicBool>,
+    click_events_rx: Receiver<(u8, u8)>
+}
+
+impl Drop for Board {
+    fn drop(&mut self) {
+        if let Some(ref mut t) = self.terminal {
+            t.queue(Show).unwrap(); // Show cursor. Unwrap instead of ? since we're in a drop
+            t.queue(LeaveAlternateScreen).unwrap();
+            disable_raw_mode().unwrap();
+        }
+    }
 }
 
 impl Board {
-    pub async fn new(width: u8, height: u8, terminal: Option<Stdout>) -> Result<Arc<Mutex<Board>>> {
-        let board = Arc::new(Mutex::new(Board {
+    pub async fn new(width: u8, height: u8, terminal: Option<Stdout>) -> Result<Board> {
+        let (tx, rx) = channel(8);
+
+        let mut board = Board {
             width,
             height,
             terminal,
             state: Vec::default(),
-            highlights: Vec::default()
-        }));
+            exit_requested: Arc::new(AtomicBool::new(false)),
+            click_events_rx: rx,
+        };
 
-        let mut board_lock = board.lock().await;
-
-        match board_lock.terminal {
-            None => (),
-            Some(ref mut t) => {
-                if is_raw_mode_enabled()? {
-                    panic!("Game already exists using this terminal");
-                }
-
-                t.queue(EnterAlternateScreen)?;
-                t.queue(EnableMouseCapture)?;
-                t.queue(Hide)?; // Hide cursor
-                enable_raw_mode()?;
-                tokio::task::spawn(event_loop(Arc::clone(&board)));
+        if let Some(ref mut t) = board.terminal {
+            if is_raw_mode_enabled()? {
+                panic!("Game already exists using this terminal");
             }
+
+            t.queue(EnterAlternateScreen)?;
+            t.queue(Hide)?; // Hide cursor
+            enable_raw_mode()?;
+            tokio::task::spawn(event_loop(Arc::clone(&board.exit_requested), tx));
         };
 
         let mut x: u8 = 0;
-        while x < board_lock.width {
-            board_lock.state.push(Vec::default());
+        while x < board.width {
+            board.state.push(Vec::default());
 
             let mut y: u8 = 0;
-            while y < board_lock.height {
+            while y < board.height {
                 let piece;
                 if (x % 2) == (y % 2) {
                     if y <= 2 {
-                        piece = BoardState::RedPiece;
+                        piece = Some(Side::Red);
                     }
-                    else if y >= (board_lock.height - 3) {
-                        piece = BoardState::BluePiece;
+                    else if y >= (board.height - 3) {
+                        piece = Some(Side::Blue);
                     }
                     else {
-                        piece = BoardState::NoPiece;
+                        piece = None;
                     }
                 }
                 else {
-                    piece = BoardState::NoPiece;
+                    piece = None
                 }
 
-                board_lock.state[x as usize].push(piece);
+                board.state[x as usize].push(BoardState {
+                    piece,
+                    highlighted: false
+                });
                 
                 y += 1;
             }
             x += 1;
         }
 
-        drop(board_lock);
         Ok(board)
     }
 
@@ -99,7 +112,7 @@ impl Board {
                 terminal.queue(MoveTo(x as u16 * 2, y as u16))?;
 
                 let bg_color: Color;
-                if self.highlights.contains(&(x, y)) {
+                if self.state[x as usize][y as usize].highlighted {
                     bg_color = Color::DarkYellow;
                 }
                 else if (x % 2) == (y % 2) {
@@ -111,13 +124,13 @@ impl Board {
 
                 terminal.queue(SetBackgroundColor(bg_color))?;
 
-                let print_str = match self.state[x as usize][y as usize] {
-                    BoardState::NoPiece => "  ",
-                    BoardState::RedPiece => {
+                let print_str = match self.state[x as usize][y as usize].piece {
+                    None => "  ",
+                    Some(Side::Red) => {
                         terminal.queue(SetForegroundColor(Color::Red))?;
                         "⦿ "
                     },
-                    BoardState::BluePiece => {
+                    Some(Side::Blue) => {
                         terminal.queue(SetForegroundColor(Color::Blue))?;
                         "⦿ "
                     },
@@ -134,32 +147,59 @@ impl Board {
         terminal.queue(SetForegroundColor(Color::Reset))?;
         terminal.flush()?;
 
-
         Ok(())
+    }
+
+    async fn next_click(&mut self) -> Result<(u8, u8)> {
+        let mut t = self.terminal.as_ref().expect("Ran next_click on board without terminal");
+        t.execute(EnableMouseCapture)?;
+        
+        loop {
+            match self.click_events_rx.recv().await {
+                Some(click) => {
+                    if click.0 < self.width && click.1 < self.height {
+                        t.execute(DisableMouseCapture)?;
+                        return Ok(click);
+                    }
+                },
+                None => {
+                    t.execute(DisableMouseCapture)?;
+                    return Err(ErrorKind::new(std::io::ErrorKind::Other, "Click Event Channel Error"));
+                }
+            }
+        }
 
     }
 
+    pub async fn play(&mut self) -> Result<()> {
+        loop {
+            /*if self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
+                return Ok(());
+            }*/
 
+            let click = self.next_click().await.unwrap();
+            self.state[click.0 as usize][click.1 as usize].highlighted = !self.state[click.0 as usize][click.1 as usize].highlighted;
+            self.draw().await?;
+        }
+    }
 }
 
 fn terminal_cord_to_board(column: u16, row: u16) -> (u8, u8) {
     ((column / 2) as u8, row as u8)
 }
 
-async fn event_loop(board: Arc<Mutex<Board>>) {
+async fn event_loop(exit_requested: Arc<AtomicBool>, click_events_tx: Sender<(u8, u8)>) {
     loop {
         match crossterm::event::read().unwrap() {
             Event::Key(event) => {
                 if event.code == KeyCode::Esc {
-                    // TODO: Show cursor, reset terminal, etc
-                    exit(0);
+                    //exit_requested.store(true, std::sync::atomic::Ordering::Relaxed);
+                    return;
                 }
             },
             Event::Mouse(event) => {
                 if event.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left) {
-                    let mut board_lock = board.lock().await;
-                    board_lock.highlights.push(terminal_cord_to_board(event.column, event.row));
-                    board_lock.draw().await.unwrap();
+                    click_events_tx.send(terminal_cord_to_board(event.column, event.row)).await.unwrap_or(());
                 }
             },
             _ => continue
