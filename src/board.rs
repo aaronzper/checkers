@@ -1,5 +1,5 @@
-use std::{io::{Stdout, Write}, sync::{Arc, atomic::AtomicBool}, collections::HashMap};
-use tokio::sync::mpsc::{Sender, Receiver, channel, error::TryRecvError};
+use std::{io::{Stdout, Write}, sync::{Arc, atomic::AtomicBool}, thread::sleep_ms};
+use tokio::sync::mpsc::{Sender, Receiver, channel};
 use crossterm::{
     Result,
     QueueableCommand,
@@ -12,14 +12,17 @@ use crossterm::{
     event::{Event, KeyCode, MouseEventKind, EnableMouseCapture, DisableMouseCapture}, ErrorKind
 };
 
+use crate::{point::Point, actor::{ActorType, Actor}};
+
+#[derive(Copy, Clone, PartialEq)]
 pub enum Side {
     Red,
     Blue
 }
 
 pub struct BoardState {
-    piece: Option<Side>,
-    highlighted: bool
+    pub piece: Option<Side>,
+    pub highlighted: bool
 }
 
 pub struct Board {
@@ -28,7 +31,7 @@ pub struct Board {
     pub terminal: Option<Stdout>,
     pub state: Vec<Vec<BoardState>>,
     exit_requested: Arc<AtomicBool>,
-    click_events_rx: Receiver<(u8, u8)>
+    click_events_rx: Receiver<Point>
 }
 
 impl Drop for Board {
@@ -145,19 +148,20 @@ impl Board {
 
         terminal.queue(SetBackgroundColor(Color::Reset))?;
         terminal.queue(SetForegroundColor(Color::Reset))?;
+        terminal.queue(Print("\n\r"))?;
         terminal.flush()?;
 
         Ok(())
     }
 
-    async fn next_click(&mut self) -> Result<(u8, u8)> {
+    pub async fn next_click(&mut self) -> Result<Point> {
         let mut t = self.terminal.as_ref().expect("Ran next_click on board without terminal");
         t.execute(EnableMouseCapture)?;
         
         loop {
             match self.click_events_rx.recv().await {
                 Some(click) => {
-                    if click.0 < self.width && click.1 < self.height {
+                    if click.x < self.width && click.y < self.height {
                         t.execute(DisableMouseCapture)?;
                         return Ok(click);
                     }
@@ -171,29 +175,79 @@ impl Board {
 
     }
 
-    pub async fn play(&mut self) -> Result<()> {
-        loop {
-            /*if self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
-                return Ok(());
-            }*/
+    pub async fn play(&mut self, red_actor_type: ActorType, blue_actor_type: ActorType) -> Result<()> {
+        if self.terminal.is_none() && (red_actor_type == ActorType::Human || blue_actor_type == ActorType::Human) {
+            return Err(ErrorKind::new(std::io::ErrorKind::Unsupported, "Cannot have human actor on virtual board"));
+        }
 
-            let click = self.next_click().await.unwrap();
-            self.state[click.0 as usize][click.1 as usize].highlighted = !self.state[click.0 as usize][click.1 as usize].highlighted;
+        let red_actor = Actor {
+            actor_type: red_actor_type,
+            side: Side::Red
+        };
+        let blue_actor = Actor {
+            actor_type: blue_actor_type,
+            side: Side::Blue
+        };
+
+        loop {
+            if self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
+                return Ok(());
+            }
+
+            red_actor.act(self).await;
+            blue_actor.act(self).await;
             self.draw().await?;
         }
     }
+
+    pub fn valid_moves(&self, acting_piece: &Point, side: Side) -> Result<Vec<Point>> {
+        let mut actions = Vec::new();
+        for x in 0..self.width {
+            for y in 0..self.height {
+                actions.push(Point { x, y });
+            }
+        }
+
+        let actions_filtered: Vec<Point> = actions.into_iter().filter(|point| {
+            let x = point.x as usize;
+            let y = point.y as usize;
+
+            if acting_piece.x.abs_diff(x as u8) != acting_piece.y.abs_diff(y as u8) { // Non-diagonal spaces aren't valid moves
+                return false;
+            }
+
+            if side == Side::Red { // Can't go backwards | TODO: Add crowning functionality
+                if acting_piece.y > y as u8 { 
+                    return false;
+                }
+            }
+            else if side == Side::Blue { // Which direction is "backwards" depends on the side
+                if acting_piece.y < y as u8 {
+                    return false;
+                }
+            }
+        
+            if self.state[x][y].piece.is_some() { // Spaces with pieces aren't valid moves
+                return false;
+            }
+
+            return true;
+        }).collect();
+
+        Ok(actions_filtered)
+    }
 }
 
-fn terminal_cord_to_board(column: u16, row: u16) -> (u8, u8) {
-    ((column / 2) as u8, row as u8)
+fn terminal_cord_to_board(column: u16, row: u16) -> Point {
+    ((column / 2) as u8, row as u8).into()
 }
 
-async fn event_loop(exit_requested: Arc<AtomicBool>, click_events_tx: Sender<(u8, u8)>) {
+async fn event_loop(exit_requested: Arc<AtomicBool>, click_events_tx: Sender<Point>) {
     loop {
         match crossterm::event::read().unwrap() {
             Event::Key(event) => {
                 if event.code == KeyCode::Esc {
-                    //exit_requested.store(true, std::sync::atomic::Ordering::Relaxed);
+                    exit_requested.store(true, std::sync::atomic::Ordering::Relaxed);
                     return;
                 }
             },
