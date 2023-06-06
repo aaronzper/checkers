@@ -12,7 +12,7 @@ use crossterm::{
     event::{Event, KeyCode, MouseEventKind, EnableMouseCapture, DisableMouseCapture}, ErrorKind
 };
 
-use crate::{point::Point, actor::{ActorType, Actor}};
+use crate::{point::Point, actor::{ActorType, Actor, ActionResult}};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Side {
@@ -189,14 +189,22 @@ impl Board {
             side: Side::Blue
         };
 
+        let mut game_over = false;
         loop {
             if self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
                 return Ok(());
             }
-
-            red_actor.act(self).await;
-            blue_actor.act(self).await;
-            self.draw().await?;
+            
+            if !game_over {
+                if red_actor.act(self).await == ActionResult::NoPiecesLeft {
+                    println!("Blue won!");
+                    game_over = true;
+                }
+                else if blue_actor.act(self).await == ActionResult::NoPiecesLeft {
+                    println!("Red won!");
+                    game_over = true;
+                }
+            }
         }
     }
 

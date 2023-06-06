@@ -21,16 +21,24 @@ pub struct Actor {
     pub side: Side
 }
 
+#[derive(PartialEq)]
+pub enum ActionResult {
+    TookAction,
+    NoPiecesLeft
+}
+
 impl Actor {
-    pub async fn act(&self, board: &mut Board) {
+    pub async fn act(&self, board: &mut Board) -> ActionResult {
         match self.actor_type {
             ActorType::Human => {
+                let mut is_piece_this_side = false;
                 // Highlight all pieces
                 for x in 0..board.width {
                     for y in 0..board.height {
                         let highlight;
                         if board.state[x as usize][y as usize].piece == Some(self.side) {
                             highlight = true;
+                            is_piece_this_side = true;
                         }
                         else {
                             highlight = false;
@@ -38,6 +46,11 @@ impl Actor {
                         board.state[x as usize][y as usize].highlighted = highlight;
                     }
                 }
+
+                if !is_piece_this_side { // There are no pieces on this side thus other side won
+                    return ActionResult::NoPiecesLeft;
+                }
+
                 board.draw().await.unwrap();
                 println!("Select which piece you want to move");
 
@@ -109,6 +122,8 @@ impl Actor {
                         break;
                     }
                 }
+
+                return ActionResult::TookAction;
             },
             _ => todo!()
         }
