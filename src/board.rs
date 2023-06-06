@@ -224,6 +224,7 @@ impl Board {
         };
 
         let mut game_over = false;
+        // TODO: Cancel out if too many AI-on-AI iterations without kill
         loop {
             if self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
                 return Ok(());
@@ -251,6 +252,7 @@ impl Board {
                         self.do_action(&action).await;
                     }
                 }
+
             }
         }
     }
