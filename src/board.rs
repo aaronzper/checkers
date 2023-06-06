@@ -12,12 +12,33 @@ use crossterm::{
     event::{Event, KeyCode, MouseEventKind, EnableMouseCapture, DisableMouseCapture}, ErrorKind
 };
 
-use crate::{point::Point, actor::{ActorType, Actor, ActionResult}};
+use crate::{point::Point, actor::{ActorType, Actor, ActionResult, Action}};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Side {
     Red,
     Blue
+}
+
+impl Side {
+    pub fn piece_is_friendly(&self, piece: &Option<Piece>) -> bool {
+        match piece {
+            None => false,
+            Some(x) => {
+                x.side == *self
+            }
+        }
+    }
+
+    pub fn piece_is_hostile(&self, piece: &Option<Piece>) -> bool {
+        match piece {
+            None => false,
+            Some(x) => {
+                x.side != *self
+            }
+        }
+    }
+
 }
 
 #[derive(Copy, Clone)]
@@ -209,13 +230,26 @@ impl Board {
             }
             
             if !game_over {
-                if red_actor.act(self).await == ActionResult::NoPiecesLeft {
-                    println!("Blue won!");
-                    game_over = true;
+                match red_actor.act(self).await {
+                    ActionResult::NoPiecesLeft => {
+                        println!("Blue won!");
+                        game_over = true;
+                        continue;
+                    },
+                    ActionResult::TookAction(action) => {
+                        self.do_action(&action).await;
+                    }
                 }
-                else if blue_actor.act(self).await == ActionResult::NoPiecesLeft {
-                    println!("Red won!");
-                    game_over = true;
+
+                match blue_actor.act(self).await {
+                    ActionResult::NoPiecesLeft => {
+                        println!("Red won!");
+                        game_over = true;
+                        continue;
+                    },
+                    ActionResult::TookAction(action) => {
+                        self.do_action(&action).await;
+                    }
                 }
             }
         }
@@ -258,6 +292,62 @@ impl Board {
         }).collect();
 
         Ok(actions_filtered)
+    }
+
+    pub async fn do_action(&mut self, action: &Action) {
+        let from_piece = self.state[action.from.x as usize][action.from.y as usize].piece.unwrap();
+
+        // Crown the piece, if applicable
+        let crowned = if from_piece.crowned {
+            true // If it's already crowned, keep it that way
+        }
+        else {
+            if (from_piece.side == Side::Red && action.to.y == self.height - 1) || (from_piece.side == Side::Blue && action.to.y == 0) {
+                true
+            }
+            else {
+                false
+            }
+        };
+
+        // Actually move the piece
+        self.state[action.from.x as usize][action.from.y as usize].piece = None;
+        self.state[action.to.x as usize][action.to.y as usize].piece = Some(Piece { side: from_piece.side, crowned });
+
+        // Find out the bigger/smaller x and y from the source/destination for below
+        let bigger_x;
+        let smaller_x;
+        let bigger_y;
+        let smaller_y;
+        if action.from.x > action.to.x {
+            bigger_x = action.from.x;
+            smaller_x = action.to.x;
+        }
+        else {
+            bigger_x = action.to.x;
+            smaller_x = action.from.x;
+        }
+        if action.from.y > action.to.y {
+            bigger_y = action.from.y;
+            smaller_y = action.to.y;
+        }   
+        else {
+            bigger_y = action.to.y;
+            smaller_y = action.from.y;
+        }
+
+        // Remove enemy pieces between source and destination
+        for x in smaller_x..bigger_x {
+            for y in smaller_y..bigger_y {
+                if action.from.x.abs_diff(x as u8) == action.from.y.abs_diff(y as u8) {
+                    if from_piece.side.piece_is_hostile(&self.state[x as usize][y as usize].piece) {
+                        self.state[x as usize][y as usize].piece = None;
+                    }
+                }
+            }
+        }
+
+        self.draw().await.unwrap();
     }
 }
 

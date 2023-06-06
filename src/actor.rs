@@ -22,30 +22,18 @@ pub struct Actor {
 }
 
 #[derive(PartialEq)]
+pub struct Action {
+    pub from: Point,
+    pub to: Point
+}
+
+#[derive(PartialEq)]
 pub enum ActionResult {
-    TookAction,
+    TookAction(Action),
     NoPiecesLeft
 }
 
 impl Actor {
-    fn piece_is_friendly(&self, piece: &Option<Piece>) -> bool {
-        match piece {
-            None => false,
-            Some(x) => {
-                x.side == self.side
-            }
-        }
-    }
-
-    fn piece_is_hostile(&self, piece: &Option<Piece>) -> bool {
-        match piece {
-            None => false,
-            Some(x) => {
-                x.side != self.side
-            }
-        }
-    }
-
     pub async fn act(&self, board: &mut Board) -> ActionResult {
         match self.actor_type {
             ActorType::Human => {
@@ -55,7 +43,7 @@ impl Actor {
                     for y in 0..board.height {
                         let piece = board.state[x as usize][y as usize].piece;
                         let mut highlight = false;
-                        if self.piece_is_friendly(&piece) {
+                        if self.side.piece_is_friendly(&piece) {
                             is_piece_this_side = true;
                             if board.valid_moves(&Point {x, y}, piece.unwrap()).unwrap().len() != 0 {
                                 highlight = true;
@@ -76,7 +64,7 @@ impl Actor {
                     let piece_cords = board.next_click().await.unwrap();
 
                     let maybe_piece = board.state[piece_cords.x as usize][piece_cords.y as usize].piece;
-                    if !self.piece_is_friendly(&maybe_piece) {
+                    if !self.side.piece_is_friendly(&maybe_piece) {
                         continue; // Pick a new piece if we picked a spot that doesnt have one of
                                   // our pieces
                     }
@@ -104,58 +92,7 @@ impl Actor {
                             continue; // Pick a new move if we picked a spot that isnt a valid move
                         }
 
-                        // Crown the piece, if applicable
-                        let crowned = if piece.crowned {
-                            true // If it's already crowned, keep it that way
-                        }
-                        else {
-                            if (self.side == Side::Red && chosen_move.y == board.height - 1) || (self.side == Side::Blue && chosen_move.y == 0) {
-                                true
-                            }
-                            else {
-                                false
-                            }
-                        };
-
-                        // Actually move the piece
-                        board.state[piece_cords.x as usize][piece_cords.y as usize].piece = None;
-                        board.state[chosen_move.x as usize][chosen_move.y as usize].piece = Some(Piece { side: self.side, crowned });
-
-                        // Find out the bigger/smaller x and y from the source/destination for below
-                        let bigger_x;
-                        let smaller_x;
-                        let bigger_y;
-                        let smaller_y;
-                        if piece_cords.x > chosen_move.x {
-                            bigger_x = piece_cords.x;
-                            smaller_x = chosen_move.x;
-                        }
-                        else {
-                            bigger_x = chosen_move.x;
-                            smaller_x = piece_cords.x;
-                        }
-                        if piece_cords.y > chosen_move.y {
-                            bigger_y = piece_cords.y;
-                            smaller_y = chosen_move.y;
-                        }   
-                        else {
-                            bigger_y = chosen_move.y;
-                            smaller_y = piece_cords.y;
-                        }
-
-                        // Remove enemy pieces between source and destination
-                        for x in smaller_x..bigger_x {
-                            for y in smaller_y..bigger_y {
-                                if piece_cords.x.abs_diff(x as u8) == piece_cords.y.abs_diff(y as u8) {
-                                    if self.piece_is_hostile(&board.state[x as usize][y as usize].piece) {
-                                        board.state[x as usize][y as usize].piece = None;
-                                    }
-                                }
-                            }
-                        }
-
-                        board.draw().await.unwrap();
-                        return ActionResult::TookAction;
+                        return ActionResult::TookAction(Action { from: piece_cords, to: chosen_move });
                     }
                 }
             },
