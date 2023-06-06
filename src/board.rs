@@ -1,4 +1,4 @@
-use std::{io::{Stdout, Write}, sync::{Arc, atomic::AtomicBool}, thread::sleep_ms};
+use std::{io::{Stdout, Write}, sync::{Arc, atomic::AtomicBool}};
 use tokio::sync::mpsc::{Sender, Receiver, channel};
 use crossterm::{
     Result,
@@ -20,8 +20,14 @@ pub enum Side {
     Blue
 }
 
+#[derive(Copy, Clone)]
+pub struct Piece {
+    pub side: Side,
+    pub crowned: bool
+}
+
 pub struct BoardState {
-    pub piece: Option<Side>,
+    pub piece: Option<Piece>,
     pub highlighted: bool
 }
 
@@ -77,10 +83,10 @@ impl Board {
                 let piece;
                 if (x % 2) == (y % 2) {
                     if y <= 2 {
-                        piece = Some(Side::Red);
+                        piece = Some(Piece { side: Side::Red, crowned: false});
                     }
                     else if y >= (board.height - 3) {
-                        piece = Some(Side::Blue);
+                        piece = Some(Piece { side: Side::Blue, crowned: false});
                     }
                     else {
                         piece = None;
@@ -127,17 +133,24 @@ impl Board {
 
                 terminal.queue(SetBackgroundColor(bg_color))?;
 
-                let print_str = match self.state[x as usize][y as usize].piece {
-                    None => "  ",
-                    Some(Side::Red) => {
-                        terminal.queue(SetForegroundColor(Color::Red))?;
-                        "⦿ "
-                    },
-                    Some(Side::Blue) => {
-                        terminal.queue(SetForegroundColor(Color::Blue))?;
-                        "⦿ "
-                    },
+                let mut print_str: String;
+                match self.state[x as usize][y as usize].piece {
+                    None => print_str = "  ".to_string(),
+                    Some(ref p) => {
+                        print_str = "⦿".to_string();
 
+                        match p.side {
+                            Side::Red => terminal.queue(SetForegroundColor(Color::Red))?,
+                            Side::Blue => terminal.queue(SetForegroundColor(Color::Blue))?,
+                        };
+                        
+                        if p.crowned {
+                            print_str += "♕";
+                        }
+                        else {
+                            print_str += " ";
+                        }
+                    },
                 };
                 terminal.queue(Print(print_str))?;
                 
@@ -208,7 +221,7 @@ impl Board {
         }
     }
 
-    pub fn valid_moves(&self, acting_piece: &Point, side: Side) -> Result<Vec<Point>> {
+    pub fn valid_moves(&self, acting_piece: &Point, piece: Piece) -> Result<Vec<Point>> {
         let mut actions = Vec::new();
         for x in 0..self.width {
             for y in 0..self.height {
@@ -224,14 +237,16 @@ impl Board {
                 return false;
             }
 
-            if side == Side::Red { // Can't go backwards | TODO: Add crowning functionality
-                if acting_piece.y > y as u8 { 
-                    return false;
+            if !piece.crowned { // Don't let pieces go backwards, but ignore if crowned
+                if piece.side == Side::Red { 
+                    if acting_piece.y > y as u8 { 
+                        return false;
+                    }
                 }
-            }
-            else if side == Side::Blue { // Which direction is "backwards" depends on the side
-                if acting_piece.y < y as u8 {
-                    return false;
+                else if piece.side == Side::Blue { // Which direction is "backwards" depends on the side
+                    if acting_piece.y < y as u8 {
+                        return false;
+                    }
                 }
             }
         
