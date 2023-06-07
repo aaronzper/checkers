@@ -14,7 +14,7 @@ use crossterm::{
 
 use crate::{point::Point, actor::{ActorType, Actor, ActionResult, Action}};
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Side {
     Red,
     Blue
@@ -226,14 +226,20 @@ impl Board {
         let mut winner = None;
         // TODO: Cancel out if too many AI-on-AI iterations without kill
         loop {
-            if self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
+            // Can ignore exit request if no terminal
+            if self.terminal.is_some() && self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
+                return Ok(winner);
+            }
+            else if self.terminal.is_none() && winner.is_some() {
                 return Ok(winner);
             }
             
             if winner.is_none() {
                 match red_actor.act(self).await {
                     ActionResult::NoPiecesLeft => {
-                        println!("Blue won!");
+                        if self.terminal.is_some() {
+                            println!("Blue won!");
+                        }
                         winner = Some(Side::Blue);
                         continue;
                     },
@@ -244,7 +250,9 @@ impl Board {
 
                 match blue_actor.act(self).await {
                     ActionResult::NoPiecesLeft => {
-                        println!("Red won!");
+                        if self.terminal.is_some() {
+                            println!("Red won!");
+                        }
                         winner = Some(Side::Red);
                         continue;
                     },
@@ -349,7 +357,9 @@ impl Board {
             }
         }
 
-        self.draw().await.unwrap();
+        if self.terminal.is_some() {
+            self.draw().await.unwrap();
+        }
     }
 }
 

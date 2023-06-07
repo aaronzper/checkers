@@ -58,7 +58,7 @@ impl Actor {
     pub async fn act(&self, board: &mut Board) -> ActionResult {
         // Sleep for 100ms if this is an AI and we're connected to the terminal
         if self.actor_type != ActorType::Human && board.terminal.is_some() {
-            sleep_ms(500);
+            sleep_ms(300);
         }
 
         let all_moves = self.get_all_moves(&board);
