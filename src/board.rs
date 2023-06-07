@@ -209,7 +209,7 @@ impl Board {
 
     }
 
-    pub async fn play(&mut self, red_actor_type: ActorType, blue_actor_type: ActorType) -> Result<()> {
+    pub async fn play(&mut self, red_actor_type: ActorType, blue_actor_type: ActorType) -> Result<Option<Side>> {
         if self.terminal.is_none() && (red_actor_type == ActorType::Human || blue_actor_type == ActorType::Human) {
             return Err(ErrorKind::new(std::io::ErrorKind::Unsupported, "Cannot have human actor on virtual board"));
         }
@@ -223,18 +223,18 @@ impl Board {
             side: Side::Blue
         };
 
-        let mut game_over = false;
+        let mut winner = None;
         // TODO: Cancel out if too many AI-on-AI iterations without kill
         loop {
             if self.exit_requested.load(std::sync::atomic::Ordering::Relaxed) {
-                return Ok(());
+                return Ok(winner);
             }
             
-            if !game_over {
+            if winner.is_none() {
                 match red_actor.act(self).await {
                     ActionResult::NoPiecesLeft => {
                         println!("Blue won!");
-                        game_over = true;
+                        winner = Some(Side::Blue);
                         continue;
                     },
                     ActionResult::TookAction(action) => {
@@ -245,7 +245,7 @@ impl Board {
                 match blue_actor.act(self).await {
                     ActionResult::NoPiecesLeft => {
                         println!("Red won!");
-                        game_over = true;
+                        winner = Some(Side::Red);
                         continue;
                     },
                     ActionResult::TookAction(action) => {

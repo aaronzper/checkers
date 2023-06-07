@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::thread::sleep_ms;
 use std::todo;
 use rand::Rng;
 
@@ -55,6 +56,11 @@ impl Actor {
     }
 
     pub async fn act(&self, board: &mut Board) -> ActionResult {
+        // Sleep for 100ms if this is an AI and we're connected to the terminal
+        if self.actor_type != ActorType::Human && board.terminal.is_some() {
+            sleep_ms(500);
+        }
+
         let all_moves = self.get_all_moves(&board);
 
         if all_moves.keys().len() == 0 { // There are no pieces on this side thus other side won
