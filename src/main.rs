@@ -11,7 +11,7 @@ async fn main() -> Result<()> {
     let mut board = board::Board::new(8, 8, Some(stdout())).await?;
     board.draw().await?;
 
-    board.play(ActorType::Human, ActorType::Human).await?;
+    board.play(ActorType::Human, ActorType::Random).await?;
 
     Ok(())
 }

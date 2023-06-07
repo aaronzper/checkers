@@ -1,5 +1,8 @@
+use std::collections::HashMap;
 use std::todo;
-use crate::board::{Board, Side, Piece};
+use rand::Rng;
+
+use crate::board::{Board, Side};
 use crate::point::Point;
 
 #[derive(PartialEq)]
@@ -34,27 +37,41 @@ pub enum ActionResult {
 }
 
 impl Actor {
+    fn get_all_moves(&self, board: &Board) -> HashMap<Point, Vec<Point>> {
+        let mut all_moves = HashMap::new();
+        for x in 0..board.width {
+            for y in 0..board.height {
+                let piece = board.state[x as usize][y as usize].piece;
+                if self.side.piece_is_friendly(&piece) {
+                    let moves = board.valid_moves(&Point {x, y}, piece.unwrap()).unwrap();
+                    if moves.len() != 0 {
+                        all_moves.insert(Point { x, y }, moves);
+                    }
+                }
+            }
+        }
+
+        all_moves
+    }
+
     pub async fn act(&self, board: &mut Board) -> ActionResult {
+        let all_moves = self.get_all_moves(&board);
+
+        if all_moves.keys().len() == 0 { // There are no pieces on this side thus other side won
+            return ActionResult::NoPiecesLeft;
+        }
+
         match self.actor_type {
             ActorType::Human => {
-                let mut is_piece_this_side = false;
                 // Highlight all pieces
                 for x in 0..board.width {
                     for y in 0..board.height {
-                        let piece = board.state[x as usize][y as usize].piece;
                         let mut highlight = false;
-                        if self.side.piece_is_friendly(&piece) {
-                            is_piece_this_side = true;
-                            if board.valid_moves(&Point {x, y}, piece.unwrap()).unwrap().len() != 0 {
-                                highlight = true;
-                            }
+                        if all_moves.keys().any(|pt| *pt == Point { x, y }) {
+                            highlight = true;
                         }
                         board.state[x as usize][y as usize].highlighted = highlight;
                     }
-                }
-
-                if !is_piece_this_side { // There are no pieces on this side thus other side won
-                    return ActionResult::NoPiecesLeft;
                 }
 
                 board.draw().await.unwrap();
@@ -95,6 +112,22 @@ impl Actor {
                         return ActionResult::TookAction(Action { from: piece_cords, to: chosen_move });
                     }
                 }
+            },
+            ActorType::Random => {
+                let mut rng = rand::thread_rng();
+
+                let piece_index = rng.gen_range(0..all_moves.keys().len());
+                let piece = all_moves.keys().collect::<Vec<&Point>>()[piece_index];
+
+                let moves = all_moves.get(piece).unwrap();
+
+                let move_index = rng.gen_range(0..moves.len());
+                let chosen_move = &moves[move_index];
+
+                return ActionResult::TookAction(Action {
+                    from: piece.clone(),
+                    to: chosen_move.clone()
+                });
             },
             _ => todo!()
         }
