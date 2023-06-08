@@ -3,7 +3,8 @@ use std::thread::sleep_ms;
 use std::todo;
 use rand::Rng;
 
-use crate::board::{Board, Side};
+use crate::board::Board;
+use crate::side::Side;
 use crate::point::Point;
 
 #[derive(PartialEq)]

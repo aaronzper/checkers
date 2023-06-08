@@ -12,34 +12,7 @@ use crossterm::{
     event::{Event, KeyCode, MouseEventKind, EnableMouseCapture, DisableMouseCapture}, ErrorKind
 };
 
-use crate::{point::Point, actor::{ActorType, Actor, ActionResult, Action}};
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Side {
-    Red,
-    Blue
-}
-
-impl Side {
-    pub fn piece_is_friendly(&self, piece: &Option<Piece>) -> bool {
-        match piece {
-            None => false,
-            Some(x) => {
-                x.side == *self
-            }
-        }
-    }
-
-    pub fn piece_is_hostile(&self, piece: &Option<Piece>) -> bool {
-        match piece {
-            None => false,
-            Some(x) => {
-                x.side != *self
-            }
-        }
-    }
-
-}
+use crate::{point::Point, actor::{ActorType, Actor, ActionResult, Action}, side::Side};
 
 #[derive(Copy, Clone)]
 pub struct Piece {
@@ -206,7 +179,6 @@ impl Board {
                 }
             }
         }
-
     }
 
     pub async fn play(&mut self, red_actor_type: ActorType, blue_actor_type: ActorType) -> Result<Option<Side>> {
