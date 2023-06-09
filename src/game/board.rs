@@ -58,7 +58,7 @@ impl Board {
         Ok(board)
     }
 
-    pub fn valid_moves(&self, acting_piece: &Point, piece: Piece) -> Result<Vec<Point>> {
+    pub fn valid_moves(&self, acting_piece_cords: &Point) -> Result<Vec<Point>> {
         let mut actions = Vec::new();
         for x in 0..self.width {
             for y in 0..self.height {
@@ -66,22 +66,24 @@ impl Board {
             }
         }
 
+        let piece = self.state[acting_piece_cords.x as usize][acting_piece_cords.y as usize].piece.as_ref().unwrap();
+
         let actions_filtered: Vec<Point> = actions.into_iter().filter(|point| {
             let x = point.x as usize;
             let y = point.y as usize;
 
-            if acting_piece.x.abs_diff(x as u8) != acting_piece.y.abs_diff(y as u8) { // Non-diagonal spaces aren't valid moves
+            if acting_piece_cords.x.abs_diff(x as u8) != acting_piece_cords.y.abs_diff(y as u8) { // Non-diagonal spaces aren't valid moves
                 return false;
             }
 
             if !piece.crowned { // Don't let pieces go backwards, but ignore if crowned
                 if piece.side == Side::Red { 
-                    if acting_piece.y > y as u8 { 
+                    if acting_piece_cords.y > y as u8 { 
                         return false;
                     }
                 }
                 else if piece.side == Side::Blue { // Which direction is "backwards" depends on the side
-                    if acting_piece.y < y as u8 {
+                    if acting_piece_cords.y < y as u8 {
                         return false;
                     }
                 }
@@ -103,7 +105,7 @@ impl Board {
             for y in 0..self.height {
                 let piece = self.state[x as usize][y as usize].piece;
                 if side.piece_is_friendly(&piece) {
-                    let moves = self.valid_moves(&Point {x, y}, piece.unwrap()).unwrap();
+                    let moves = self.valid_moves(&Point {x, y}).unwrap();
                     if moves.len() != 0 {
                         all_moves.insert(Point { x, y }, moves);
                     }

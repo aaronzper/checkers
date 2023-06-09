@@ -3,9 +3,10 @@ mod board;
 
 use std::io::Stdout;
 use crossterm::{Result, ErrorKind};
-use crate::{actor::{ActorType, Actor, ActionResult}, side::Side, piece::Piece};
+use crate::{actor::{ActorType, Actor, ActionResult}, side::Side};
 use self::{terminal::TerminalWrapper, board::Board};
 
+#[derive(Debug)]
 pub struct GameResult {
     pub moves: usize,
     pub winner: Side
@@ -46,6 +47,8 @@ impl Game {
         };
 
         let mut winner = None;
+        let mut moves = 0;
+
         // TODO: Cancel out if too many AI-on-AI iterations without kill
         loop {
             // Can ignore exit request if no terminal
@@ -58,7 +61,6 @@ impl Game {
                 return Ok(winner);
             }
             
-            let mut moves = 0;
             if winner.is_none() {
                 match red_actor.act(self).await {
                     ActionResult::NoPiecesLeft => {

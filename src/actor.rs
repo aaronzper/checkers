@@ -151,6 +151,6 @@ impl Actor {
 
 // Simulates the result of an action, and returns how many steps it took to get to that result
 async fn simulate_action(mut game: Game, action: Action, actor_type: RecursiveActorType) -> GameResult {
-    game.board.do_action(&action);
+    game.board.do_action(&action).await;
     game.play(actor_type.into(), actor_type.into()).await.unwrap().unwrap()
 }

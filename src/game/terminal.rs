@@ -1,5 +1,5 @@
 use std::{sync::{Arc, atomic::AtomicBool}, io::{Stdout, Write}};
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::{sync::mpsc::{channel, Receiver, Sender}, task::JoinHandle};
 use crate::point::Point;
 use crate::game::board::Board;
 use crate::Side;
@@ -18,35 +18,42 @@ use crossterm::{
 pub struct TerminalWrapper {
     pub terminal: Stdout,
     pub exit_requested: Arc<AtomicBool>,
-    pub click_events_rx: Receiver<Point>
+    pub click_events_rx: Receiver<Point>,
+    event_loop_handle: JoinHandle<()>
 }
 
 impl Drop for TerminalWrapper {
     fn drop(&mut self) {
+        self.event_loop_handle.abort();
         self.terminal.queue(Show).unwrap(); // Show cursor. Unwrap instead of ? since we're in a drop
         self.terminal.queue(LeaveAlternateScreen).unwrap();
         disable_raw_mode().unwrap();
+        println!("bye!");
     }
 }
 
 impl TerminalWrapper {
-    pub fn new(terminal: Stdout) -> Result<TerminalWrapper> {
+    pub fn new(mut terminal: Stdout) -> Result<TerminalWrapper> {
         let (tx, rx) = channel(8);
+        let exit_requested = Arc::new(AtomicBool::new(false));
 
-        let mut wrapper = TerminalWrapper {
-            terminal,
-            exit_requested: Arc::new(AtomicBool::new(false)),
-            click_events_rx: rx
-        };
 
         if is_raw_mode_enabled()? {
             panic!("Game already exists using this terminal");
         }
 
-        wrapper.terminal.queue(EnterAlternateScreen)?;
-        wrapper.terminal.queue(Hide)?; // Hide cursor
+        terminal.queue(EnterAlternateScreen)?;
+        terminal.queue(Hide)?; // Hide cursor
         enable_raw_mode()?;
-        tokio::task::spawn(event_loop(Arc::clone(&wrapper.exit_requested), tx));
+
+        let event_loop_handle = tokio::task::spawn(event_loop(Arc::clone(&exit_requested), tx));
+
+        let mut wrapper = TerminalWrapper {
+            terminal,
+            click_events_rx: rx,
+            exit_requested,
+            event_loop_handle
+        };
 
         Ok(wrapper)
     }
