@@ -11,12 +11,6 @@ pub struct GameResult {
     pub winner: Side
 }
 
-#[derive(Clone)]
-pub struct BoardState {
-    pub piece: Option<Piece>,
-    pub highlighted: bool
-}
-
 pub struct Game {
     pub board: Board,
     pub terminal_wrapper: Option<TerminalWrapper>,
