@@ -1,23 +1,19 @@
-mod board;
+mod game;
 mod actor;
 mod point;
 mod side;
+mod piece;
 
 use std::io::stdout;
 use crossterm::Result;
 use actor::ActorType;
 use side::Side;
-use board::Board;
+use game::Game;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut board = Board::new(8, 8, Some(stdout())).await?;
-    board.draw().await?;
-
-    match board.play(ActorType::Random, ActorType::Random).await.unwrap().unwrap() {
-        Side::Red => println!("Red won!"),
-        Side::Blue => println!("Blue won!")
-    };
+    let mut game = Game::new(8, 8, Some(stdout()))?;
+    game.play(ActorType::Random, ActorType::Random).await.unwrap().unwrap();
 
     Ok(())
 }
