@@ -18,7 +18,7 @@ use crossterm::{
 pub struct TerminalWrapper {
     pub terminal: Stdout,
     pub exit_requested: Arc<AtomicBool>,
-    pub click_events_rx: Receiver<Point>,
+    click_events_rx: Receiver<Point>,
     event_loop_handle: JoinHandle<()>
 }
 
