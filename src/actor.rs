@@ -1,6 +1,5 @@
 use tokio::time::sleep;
 use std::time::Duration;
-use std::todo;
 use rand::Rng;
 use std::collections::HashMap;
 
@@ -128,6 +127,7 @@ impl Actor {
                     to: chosen_move.clone()
                 });
             },
+            ActorType::MostKills => unimplemented!(),
             ActorType::Recursive(recursive_actor) => {
                 let mut futures = HashMap::new();
                 all_moves.keys().for_each(|piece| {
@@ -162,7 +162,6 @@ impl Actor {
 
                 return ActionResult::TookAction(quickest_win.0.clone());
             }
-            _ => todo!()
         }
     }
 }
