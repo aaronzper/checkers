@@ -1,4 +1,5 @@
-use std::thread::sleep_ms;
+use tokio::time::sleep;
+use std::time::Duration;
 use std::todo;
 use rand::Rng;
 use std::collections::HashMap;
@@ -51,8 +52,8 @@ impl Actor {
     #[async_recursion::async_recursion] // Needed to allow async recursion for the recursive actor
     pub async fn act(&self, game: &mut Game) -> ActionResult {
         // Sleep for 100ms if this is an AI and we're connected to the terminal
-        if self.actor_type != ActorType::Human && game.terminal_wrapper.is_some() {
-            sleep_ms(00);
+        if (self.actor_type != ActorType::Human) && game.terminal_wrapper.is_some() {
+            sleep(Duration::from_millis(100)).await;
         }
 
         let all_moves = game.board.get_all_moves(self.side);
