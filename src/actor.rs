@@ -149,11 +149,15 @@ impl Actor {
                     results.insert(future.0, future.1.await.unwrap());
                 }
 
-                let quickest_win = results.iter().filter(|result| {
+                let winning_results = results.iter().filter(|result| {
                     result.1.winner == self.side
-                }).min_by_key(|result| {
-                    result.1.moves
-                }).unwrap();
+                });
+
+                let quickest_win = match winning_results.min_by_key(|result| result.1.moves) {
+                    Some(x) => x,
+                    None => results.iter().max_by_key(|result| result.1.moves).unwrap() // If min returns None, there are no winning games.
+                                                                                        // Thus, pick the one where we lose in the most moves
+                };
 
                 return ActionResult::TookAction(quickest_win.0.clone());
             }
