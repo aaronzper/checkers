@@ -22,8 +22,8 @@ pub enum ActorType {
 }
 
 impl From<RecursiveActorType> for ActorType {
-    fn from(old: RecursiveActorType) -> Self {
-        match old {
+    fn from(input: RecursiveActorType) -> Self {
+        match input {
             RecursiveActorType::Random => ActorType::Random,
             RecursiveActorType::MostKills => ActorType::MostKills
         }
