@@ -8,7 +8,7 @@ use crate::point::Point;
 use crate::game::{Game, GameResult};
 
 #[derive(PartialEq, Clone, Copy)]
-pub enum RecursiveActorType {
+pub enum SimulatedActorType {
     Random,
     MostKills
 }
@@ -18,14 +18,14 @@ pub enum ActorType {
     Human,
     Random,
     MostKills,
-    Recursive(RecursiveActorType)
+    Simulated(SimulatedActorType)
 }
 
-impl From<RecursiveActorType> for ActorType {
-    fn from(input: RecursiveActorType) -> Self {
+impl From<SimulatedActorType> for ActorType {
+    fn from(input: SimulatedActorType) -> Self {
         match input {
-            RecursiveActorType::Random => ActorType::Random,
-            RecursiveActorType::MostKills => ActorType::MostKills
+            SimulatedActorType::Random => ActorType::Random,
+            SimulatedActorType::MostKills => ActorType::MostKills
         }
     }
 }
@@ -128,7 +128,7 @@ impl Actor {
                 });
             },
             ActorType::MostKills => unimplemented!(),
-            ActorType::Recursive(recursive_actor) => {
+            ActorType::Simulated(simulated_actor) => {
                 let mut futures = HashMap::new();
                 all_moves.keys().for_each(|piece| {
                     all_moves.get(piece).unwrap().iter().for_each(|move_to| {
@@ -141,7 +141,7 @@ impl Actor {
                             board: game.board.clone(),
                             terminal_wrapper: None
                         };
-                        futures.insert(action.clone(), tokio::spawn(simulate_action(sim_game, action, recursive_actor)));
+                        futures.insert(action.clone(), tokio::spawn(simulate_action(sim_game, action, simulated_actor)));
                     });
                 });
 
@@ -167,7 +167,7 @@ impl Actor {
 }
 
 // Simulates the result of an action, and returns how many steps it took to get to that result
-async fn simulate_action(mut game: Game, action: Action, actor_type: RecursiveActorType) -> GameResult {
+async fn simulate_action(mut game: Game, action: Action, actor_type: SimulatedActorType) -> GameResult {
     game.board.do_action(&action).await;
     game.play(actor_type.into(), actor_type.into()).await.unwrap().unwrap()
 }

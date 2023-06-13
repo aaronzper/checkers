@@ -8,13 +8,13 @@ use std::env::args;
 use std::io::stdout;
 use crossterm::Result;
 use actor::ActorType;
-use actor::RecursiveActorType;
+use actor::SimulatedActorType;
 use side::Side;
 use game::Game;
 
 fn str_to_actor(input: String) -> Result<ActorType> {
     match input.to_uppercase().as_str() {
-        "S" => Ok(ActorType::Recursive(RecursiveActorType::Random)),
+        "S" => Ok(ActorType::Simulated(SimulatedActorType::Random)),
         "R" => Ok(ActorType::Random),
         "H" => Ok(ActorType::Human),
         _ => Err(crossterm::ErrorKind::new(std::io::ErrorKind::InvalidData, "Invalid actor type code"))
