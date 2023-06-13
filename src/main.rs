@@ -13,7 +13,7 @@ use game::Game;
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut game = Game::new(8, 8, Some(stdout()))?;
-    let result = game.play(ActorType::Random, ActorType::Random).await.unwrap().unwrap();
+    let result = game.play(ActorType::Recursive(actor::RecursiveActorType::Random), ActorType::Human).await.unwrap().unwrap();
     drop(game);
 
     println!("{:?}", result);

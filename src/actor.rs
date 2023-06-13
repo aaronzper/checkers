@@ -1,6 +1,7 @@
 use std::thread::sleep_ms;
 use std::todo;
 use rand::Rng;
+use std::collections::HashMap;
 
 use crate::side::Side;
 use crate::point::Point;
@@ -34,7 +35,7 @@ pub struct Actor {
     pub side: Side
 }
 
-#[derive(PartialEq)]
+#[derive(Eq, PartialEq, Hash, Clone)]
 pub struct Action {
     pub from: Point,
     pub to: Point
@@ -47,10 +48,11 @@ pub enum ActionResult {
 }
 
 impl Actor {
+    #[async_recursion::async_recursion] // Needed to allow async recursion for the recursive actor
     pub async fn act(&self, game: &mut Game) -> ActionResult {
         // Sleep for 100ms if this is an AI and we're connected to the terminal
         if self.actor_type != ActorType::Human && game.terminal_wrapper.is_some() {
-            sleep_ms(300);
+            sleep_ms(00);
         }
 
         let all_moves = game.board.get_all_moves(self.side);
@@ -126,7 +128,7 @@ impl Actor {
                 });
             },
             ActorType::Recursive(recursive_actor) => {
-                let mut futures = Vec::new();
+                let mut futures = HashMap::new();
                 all_moves.keys().for_each(|piece| {
                     all_moves.get(piece).unwrap().iter().for_each(|move_to| {
                         let action = Action {
@@ -138,11 +140,22 @@ impl Actor {
                             board: game.board.clone(),
                             terminal_wrapper: None
                         };
-                        futures.push(simulate_action(sim_game, action, recursive_actor));
+                        futures.insert(action.clone(), tokio::spawn(simulate_action(sim_game, action, recursive_actor)));
                     });
                 });
 
-                todo!()
+                let mut results = HashMap::new();
+                for future in futures {
+                    results.insert(future.0, future.1.await.unwrap());
+                }
+
+                let quickest_win = results.iter().filter(|result| {
+                    result.1.winner == self.side
+                }).min_by_key(|result| {
+                    result.1.moves
+                }).unwrap();
+
+                return ActionResult::TookAction(quickest_win.0.clone());
             }
             _ => todo!()
         }

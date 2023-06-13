@@ -28,7 +28,6 @@ impl Drop for TerminalWrapper {
         self.terminal.queue(Show).unwrap(); // Show cursor. Unwrap instead of ? since we're in a drop
         self.terminal.queue(LeaveAlternateScreen).unwrap();
         disable_raw_mode().unwrap();
-        println!("bye!");
     }
 }
 
@@ -36,7 +35,6 @@ impl TerminalWrapper {
     pub fn new(mut terminal: Stdout) -> Result<TerminalWrapper> {
         let (tx, rx) = channel(8);
         let exit_requested = Arc::new(AtomicBool::new(false));
-
 
         if is_raw_mode_enabled()? {
             panic!("Game already exists using this terminal");
@@ -48,7 +46,7 @@ impl TerminalWrapper {
 
         let event_loop_handle = tokio::task::spawn(event_loop(Arc::clone(&exit_requested), tx));
 
-        let mut wrapper = TerminalWrapper {
+        let wrapper = TerminalWrapper {
             terminal,
             click_events_rx: rx,
             exit_requested,
